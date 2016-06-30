@@ -53,7 +53,6 @@ public class GroupDetailActivity extends Activity implements GroupMembersAdapter
             finish();
             return;
         }
-
         me = this;
         findView();
         initView();

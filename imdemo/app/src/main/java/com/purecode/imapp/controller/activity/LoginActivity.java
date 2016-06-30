@@ -21,6 +21,20 @@ import static android.widget.Toast.makeText;
 
 /**
  * Created by purecode on 2016/5/18.
+ *
+ * 正确的注册流程
+ * App->输入APP用户名和密码
+ *     ->发送给APP服务器后端
+ *      ->APP服务器端根据传过来的用户名和密码，会生成环信ID和环信密码，然后调用环信后台REST注册接口
+ *       ->后台调用环信注册接口成功返回后，APP需要把注册的APP用户名和密码，还有环信的用户名和密码保存到后台数据库，正常情况下根据环信官方建议环信密码从此最好不要更改，但用户的密码可以更改
+ *        ->后台会通知前端用户注册成功，并且把环信的ID和环信密码返回给前端
+ *         ->至此前端即可用环信的ID和密码登陆环信IM服务器
+ *
+ * 登录流程
+ * 首先->获取输入的用户名
+ *      ->再去本地的账号数据库获取账号信息
+ *       ->如果获取到了账号信息，即可以获得了环信的ID，然后再根据环信的ID登录环信后台
+ *       ->如果本地没有账号信息，就需要从APP服务器后台获取账号信息，然后再根据获取到的环信ID登录后台
  */
 public class LoginActivity extends Activity{
 
@@ -79,32 +93,15 @@ public class LoginActivity extends Activity{
             public void run() {
                 String appUser = mEtName.getText().toString();
 
-                IMUser account = Model.getInstance().getUserAccountHandler().getAccount(appUser);
-
-                if(account == null){
-                    try {
-                        account = Model.getInstance().getUserAccountHandler().createAppAccountFromAppServer(appUser);
-                    } catch (Exception e) {
-
-                        // 创建APP账号失败
-                        showMessage(pd,e.toString());
-                        return;
-                    }
-                }
-
                 String pwd = mEtPwd.getText().toString();
-
                 try {
-                    EMClient.getInstance().createAccount(account.getHxId(),pwd);
-
+                    IMUser account = Model.getInstance().getUserAccountHandler().createAppAccountFromAppServer(appUser,pwd);
                     Model.getInstance().getUserAccountHandler().addAccount(account);
-
                     showMessage(pd, "注册成功！");
-                } catch (HyphenateException e) {
-                    final String msg = e.toString();
+                } catch (Exception e) {
 
-                    showMessage(pd,"注册失败！" +  msg);
-                }
+                    // 创建APP账号失败
+                    showMessage(pd,"注册失败！" +  e.toString());}
             }
         });
     }
