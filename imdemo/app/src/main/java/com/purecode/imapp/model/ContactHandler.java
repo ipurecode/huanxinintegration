@@ -38,9 +38,10 @@ public class ContactHandler extends HandlerBase{
 
     /**
      * 从远程服务器获取联系人信息
-     * 1. 从环信服务器上获取
-     * 2. 同时从app服务器上获取
-     * 3. 等到这两个都返回时做两者的同步
+     * ->从APP服务器上获取联系人
+     *  ->APP服务器再去环信服务器上去同步联系人(如果依赖环信的好友体系)
+     *   ->APP服务器返回给前端
+     *    ->前端更新本地数据库
      */
     public void asyncfetchUsers() {
         Model.getInstance().globalThreadPool().execute(new Runnable() {
@@ -48,23 +49,16 @@ public class ContactHandler extends HandlerBase{
             public void run() {
                 mIsContactSynced = false;
 
-                List<String> hxUsers = null;
                 try {
-                    hxUsers = EMClient.getInstance().contactManager().getAllContactsFromServer();
+                    fetchAppUsersFromServer();
                     mIsContactSynced = true;
                     mPreference.setContactSynced(true);
-                } catch (HyphenateException e) {
+                } catch (Exception e) {
                     GlobalEventNotifer.getInstance().notifyContactSyncChanged(false);
                     e.printStackTrace();
 
                     return;
                 }
-
-                // 同步联系人
-                // 以环信的联系人为主，如果环信的联系人里没有app里的联系，就把app里的联系人删除
-                // 如果app里的联系人没有环信的联系人，则加入到app里
-
-                fetchUsersFromAppServerByHXIDS(hxUsers);
 
                 // 最后要更新本地数据库
                 getDbManager().saveContacts(mContacts.values());
@@ -130,19 +124,15 @@ public class ContactHandler extends HandlerBase{
         return mIsContactSynced;
     }
 
-    /**
-     * try to fetch the user info from app server
-     * and when fecting is done, update the cache and the db
-     * @param user
-     */
-    private void fetchUserFromAppServer(IMUser user) {
-        user.setNick(user.getHxId() + "_凤凰");
-    }
-
     public List<IMUser> getContactsByHxIds(List<String> hxIds){
         return getDbManager().getContactsByHx(hxIds);
     }
 
+    /**
+     * 用来从APP服务器获取非好友的用户信息，根据环信的id列表
+     * @param members
+     * @return
+     */
     public List<IMUser> fetchUsersFromServerByHXIDs(List<String> members){
         List<IMUser> users = new ArrayList<>();
 
@@ -163,7 +153,11 @@ public class ContactHandler extends HandlerBase{
         return users;
     }
 
-    //获取app user信息
+    /**
+     * 用来根据APP user名称获取，详细的用户信息，其中包括环信ID
+     * @param appUser
+     * @return
+     */
     public  IMUser fetchUserFromServer(String appUser){
         // 伪代码设置昵称，和头像
         IMUser user = new IMUser();
@@ -174,6 +168,49 @@ public class ContactHandler extends HandlerBase{
         user.setAvartar(AVARTARS[new Random().nextInt(100) % (AVARTARS.length - 1)]);
 
         return user;
+    }
+
+    /**
+     * 从后台获取所有的好友详情列表
+     *
+     * 由于缺乏后台，我们这里直接从环信后台获取
+     * @throws Exception
+     */
+    private void fetchAppUsersFromServer() throws Exception{
+        // 由于缺乏后台server，我们直接从环信后台获取
+        List<String> hxUsers = null;
+        try {
+            hxUsers = EMClient.getInstance().contactManager().getAllContactsFromServer();
+        } catch (HyphenateException e) {
+            e.printStackTrace();
+
+            return;
+        }
+
+        mContacts.clear();
+
+        // 为了演示头像和昵称，我们填入固定的数据
+        int index = 0;
+        for(String hxId:hxUsers){
+            IMUser user = new IMUser();
+
+            user.setAppUser(hxId);
+            user.setHxId(hxId);
+            user.setNick(user.getHxId() + "_" + NICKS[index % (NICKS.length-1)]);
+            user.setAvartar(AVARTARS[index%(AVARTARS.length-1)]);
+
+            mContacts.put(user.getAppUser(),user);
+
+            index++;
+        }
+    }
+    /**
+     * try to fetch the user info from app server
+     * and when fecting is done, update the cache and the db
+     * @param user
+     */
+    private void fetchUserFromAppServer(IMUser user) {
+        user.setNick(user.getHxId() + "_凤凰");
     }
 
     IMUser getUserByHx(String hxId){
@@ -193,38 +230,12 @@ public class ContactHandler extends HandlerBase{
         mContacts.clear();
     }
 
-    // 就为了展示头像和昵称做的简单的假数据
-    private static String[] NICKS = new String[]{"老虎","熊猫","猴子","猎豹","灰熊","企鹅"};
-    private static String[] AVARTARS = new String[]{
-            "http://hiphotos.baidu.com/zhixin/abpic/item/34bbf8cd7b899e516c616dcc40a7d933c9950d3f.jpg",
-            "http://c.hiphotos.baidu.com/baike/pic/item/b8014a90f603738d2be54617b61bb051f819ec5c.jpg",
-            "http://c.hiphotos.baidu.com/baike/w%3D268%3Bg%3D0/sign=788945d218178a82ce3c78a6ce3814b0/8435e5dde71190ef8c692dc1c81b9d16fdfa601a.jpg",
-            "http://e.hiphotos.baidu.com/baike/pic/item/2f738bd4b31c87015d939086277f9e2f0708ffad.jpg"};
-
-    private void fetchUsersFromAppServerByHXIDS(List<String> hxUsers) {
-        // 实际上是应该从APP服务器上获取联系人的信息
-
-        // 不过由于缺乏我们的demo的服务器，暂时hick下，用下假数据
-        //
-
-        mContacts.clear();
-
-        int index = 0;
-        for(String hxId:hxUsers){
-            IMUser user = new IMUser();
-
-            user.setAppUser(hxId);
-            user.setHxId(hxId);
-            user.setNick(user.getHxId() + "_" + NICKS[index % (NICKS.length-1)]);
-            user.setAvartar(AVARTARS[index%(AVARTARS.length-1)]);
-
-            mContacts.put(user.getAppUser(),user);
-
-            index++;
-        }
-    }
-
-    IMUser fetchUserFromServerByHXID(String hxId){
+    /**
+     * 根据环信id来获取用户详情
+     * @param hxId
+     * @return
+     */
+    private IMUser fetchUserFromServerByHXID(String hxId){
 
         // 伪代码设置昵称，和头像
         IMUser user = new IMUser();
@@ -239,4 +250,12 @@ public class ContactHandler extends HandlerBase{
     private void saveNonFriends(Collection<IMUser> contacts){
         getDbManager().saveNonFriends(contacts);
     }
+
+    // 就为了展示头像和昵称做的简单的假数据
+    private static String[] NICKS = new String[]{"老虎","熊猫","猴子","猎豹","灰熊","企鹅"};
+    private static String[] AVARTARS = new String[]{
+            "http://hiphotos.baidu.com/zhixin/abpic/item/34bbf8cd7b899e516c616dcc40a7d933c9950d3f.jpg",
+            "http://c.hiphotos.baidu.com/baike/pic/item/b8014a90f603738d2be54617b61bb051f819ec5c.jpg",
+            "http://c.hiphotos.baidu.com/baike/w%3D268%3Bg%3D0/sign=788945d218178a82ce3c78a6ce3814b0/8435e5dde71190ef8c692dc1c81b9d16fdfa601a.jpg",
+            "http://e.hiphotos.baidu.com/baike/pic/item/2f738bd4b31c87015d939086277f9e2f0708ffad.jpg"};
 }
